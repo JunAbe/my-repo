@@ -12,8 +12,6 @@ on:
 permissions:
   # ブランチ削除のために refs を更新する必要があるので write が必要
   contents: write
-  # PR 情報の参照用
-  pull-requests: read
 
 # ワークフロー全体で使う環境変数
 env:
