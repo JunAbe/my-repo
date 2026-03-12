@@ -1,0 +1,47 @@
+name: Delete merged branch by prefix
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  delete-branch:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete merged branch when prefix matches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.payload.pull_request.head.ref;
+            const allowedPrefixes = [
+              'feature/',
+              'bugfix/',
+              'hotfix/',
+              'chore/'
+            ];
+
+            const matched = allowedPrefixes.some(prefix => branch.startsWith(prefix));
+
+            core.info(`head.ref: ${branch}`);
+            core.info(`allowedPrefixes: ${allowedPrefixes.join(', ')}`);
+
+            if (!matched) {
+              core.info('Branch prefix did not match. Skip deletion.');
+              return;
+            }
+
+            await github.rest.git.deleteRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${branch}`
+            });
+
+            core.info(`Deleted branch: ${branch}`);
