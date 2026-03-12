@@ -8,6 +8,9 @@ permissions:
   contents: write
   pull-requests: read
 
+env:
+  DELETE_BRANCH_PREFIXES: feature/,bugfix/,hotfix/
+
 jobs:
   delete-branch:
     if: >
@@ -21,20 +24,16 @@ jobs:
         with:
           script: |
             const branch = context.payload.pull_request.head.ref;
-            const allowedPrefixes = [
-              'feature/',
-              'bugfix/',
-              'hotfix/',
-              'chore/'
-            ];
-
-            const matched = allowedPrefixes.some(prefix => branch.startsWith(prefix));
+            const allowedPrefixes = (process.env.DELETE_BRANCH_PREFIXES || '')
+              .split(',')
+              .map(v => v.trim())
+              .filter(Boolean);
 
             core.info(`head.ref: ${branch}`);
             core.info(`allowedPrefixes: ${allowedPrefixes.join(', ')}`);
 
-            if (!matched) {
-              core.info('Branch prefix did not match. Skip deletion.');
+            if (!allowedPrefixes.some(prefix => branch.startsWith(prefix))) {
+              core.info('No prefix matched. Skip deletion.');
               return;
             }
 
