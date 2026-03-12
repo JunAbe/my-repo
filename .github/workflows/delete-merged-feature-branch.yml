@@ -1,29 +1,48 @@
+# ワークフロー名
 name: Delete merged branch by prefix
 
+# PR が closed（クローズ）されたタイミングで実行する
+# ※ merged 時も closed イベントとして通知されるため、
+#   実際にマージされたかどうかは job 側の if で判定する
 on:
   pull_request:
     types: [closed]
 
+# このワークフローが使う権限
 permissions:
+  # ブランチ削除のために refs を更新する必要があるので write が必要
   contents: write
+  # PR 情報の参照用
   pull-requests: read
 
+# ワークフロー全体で使う環境変数
 env:
+  # 自動削除の対象にするブランチ接頭辞
+  # カンマ区切りで追加可能
+  # 例:
+  #   feature/,bugfix/,hotfix/,chore/
   DELETE_BRANCH_PREFIXES: feature/,bugfix/,hotfix/
 
 jobs:
   delete-branch:
+    # ジョブを実行する条件
     if: >
       github.event.pull_request.merged == true &&
       github.event.pull_request.head.repo.full_name == github.repository
+
     runs-on: ubuntu-latest
 
     steps:
-      - name: Delete merged branch when prefix matches
+      - name: マージ済みブランチを条件付きで削除
         uses: actions/github-script@v7
         with:
           script: |
+            // PR の head 側ブランチ名を取得
+            // 例: feature/add-login
             const branch = context.payload.pull_request.head.ref;
+
+            // 環境変数から削除対象の接頭辞一覧を取得
+            // カンマ区切り文字列を配列に変換し、空要素は除外する
             const allowedPrefixes = (process.env.DELETE_BRANCH_PREFIXES || '')
               .split(',')
               .map(v => v.trim())
@@ -32,11 +51,19 @@ jobs:
             core.info(`head.ref: ${branch}`);
             core.info(`allowedPrefixes: ${allowedPrefixes.join(', ')}`);
 
-            if (!allowedPrefixes.some(prefix => branch.startsWith(prefix))) {
-              core.info('No prefix matched. Skip deletion.');
+            // 対象接頭辞に一致するか確認
+            // 例:
+            //   feature/add-login -> feature/ に一致
+            //   docs/update-readme -> 一致しない
+            const matched = allowedPrefixes.some(prefix => branch.startsWith(prefix));
+
+            if (!matched) {
+              core.info('削除対象の接頭辞に一致しないため、ブランチ削除をスキップします。');
               return;
             }
 
+            // head 側ブランチを削除
+            // ref には "heads/ブランチ名" の形式を指定する
             await github.rest.git.deleteRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
