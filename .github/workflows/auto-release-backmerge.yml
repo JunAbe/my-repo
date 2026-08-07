@@ -1,0 +1,167 @@
+name: Auto Release Backmerge
+
+on:
+  schedule:
+    # 毎日 03:00 JST（前日 18:00 UTC）に実行する
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-release-backmerge
+  cancel-in-progress: false
+
+jobs:
+  create-backmerge-prs:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all remote branches
+        shell: bash
+        run: git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Detect unmerged release branches and create pull requests
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          today=$(TZ=Asia/Tokyo date +%Y%m%d)
+          failure_count=0
+
+          while IFS= read -r remote_branch; do
+            release_branch=${remote_branch#origin/}
+
+            printf '\nChecking %s\n' "$release_branch"
+
+            if [[ ! "$release_branch" =~ ^release/[0-9]{8}$ ]]; then
+              echo "  status: branch name does not match release/yyyyMMdd -> skip"
+              continue
+            fi
+
+            release_date=${release_branch#release/}
+            formatted_date="${release_date:0:4}-${release_date:4:2}-${release_date:6:2}"
+            echo "  release date: $release_date"
+            echo "  today (JST): $today"
+
+            if ! parsed_date=$(date -d "$formatted_date" +%Y%m%d 2>/dev/null) || [[ "$parsed_date" != "$release_date" ]]; then
+              echo "  status: invalid calendar date -> skip"
+              continue
+            fi
+
+            if [[ "$release_date" == "$today" || "$release_date" > "$today" ]]; then
+              echo "  status: release date is today or in the future -> skip"
+              continue
+            fi
+
+            if git merge-base --is-ancestor "origin/${release_branch}" origin/main; then
+              echo "  status: already merged -> skip"
+              continue
+            else
+              merge_base_status=$?
+              if [[ $merge_base_status -ne 1 ]]; then
+                echo "  status: failed to compare with main (exit $merge_base_status)"
+                failure_count=$((failure_count + 1))
+                continue
+              fi
+            fi
+
+            echo "  status: unmerged"
+
+            if ! existing_pr_count=$(gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --head "$release_branch" \
+              --base main \
+              --state open \
+              --json number \
+              --jq 'length'); then
+              echo "  existing PR: lookup failed"
+              failure_count=$((failure_count + 1))
+              continue
+            fi
+
+            if [[ "$existing_pr_count" -gt 0 ]]; then
+              echo "  existing PR: found -> skip"
+              continue
+            fi
+
+            echo "  existing PR: none"
+            echo "  creating PR..."
+
+            body_file=$(mktemp)
+            cat > "$body_file" <<EOF
+          ## 概要
+
+          リリースブランチの変更内容を \`main\` へ反映するための自動作成 Pull Request です。
+
+          対象リリースブランチ:
+
+          \`${release_branch}\`
+
+          この Pull Request は GitHub Actions によって自動作成されました。
+
+          ## 背景
+
+          リリース後の \`main\` へのマージ漏れを防止するため、
+          日付が経過した未マージのリリースブランチを検出して自動的に作成しています。
+
+          ## 確認事項
+
+          - [ ] release ブランチの変更内容に問題がないこと
+          - [ ] main へマージして問題ないこと
+          EOF
+
+            # 作成直前にも確認し、再実行や並行操作による重複を防止する。
+            if ! existing_pr_count=$(gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --head "$release_branch" \
+              --base main \
+              --state open \
+              --json number \
+              --jq 'length'); then
+              echo "  existing PR: final lookup failed"
+              rm -f "$body_file"
+              failure_count=$((failure_count + 1))
+              continue
+            fi
+
+            if [[ "$existing_pr_count" -gt 0 ]]; then
+              echo "  existing PR: found during final check -> skip"
+              rm -f "$body_file"
+              continue
+            fi
+
+            if gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$release_branch" \
+              --title "[Auto] Merge ${release_branch} back to main" \
+              --body-file "$body_file"; then
+              echo "  status: PR created"
+            else
+              echo "  status: PR creation failed"
+              failure_count=$((failure_count + 1))
+            fi
+
+            rm -f "$body_file"
+          done < <(
+            git for-each-ref \
+              --format='%(refname:short)' \
+              refs/remotes/origin/release/
+          )
+
+          if [[ $failure_count -gt 0 ]]; then
+            echo "Completed with $failure_count error(s)."
+            exit 1
+          fi
+
+          echo "Completed successfully."
