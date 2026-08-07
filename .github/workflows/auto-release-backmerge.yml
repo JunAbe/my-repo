@@ -27,9 +27,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch all remote branches
+      - name: Fetch main and release branches
         shell: bash
-        run: git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+        run: git fetch --prune origin '+refs/heads/main:refs/remotes/origin/main' '+refs/heads/release/*:refs/remotes/origin/release/*'
 
       - name: Ensure pull request label exists
         shell: bash
@@ -55,7 +55,7 @@ jobs:
       - name: Detect unmerged release branches and create pull requests
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
 
           today=$(TZ=Asia/Tokyo date +%Y%m%d)
           failure_count=0
