@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -29,6 +30,27 @@ jobs:
       - name: Fetch all remote branches
         shell: bash
         run: git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Ensure pull request label exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          label_exists=$(gh label list \
+            --repo "$GITHUB_REPOSITORY" \
+            --search "自動作成" \
+            --json name \
+            --jq 'any(.name == "自動作成")')
+
+          if [[ "$label_exists" == "true" ]]; then
+            echo "Label already exists: 自動作成"
+            exit 0
+          fi
+
+          gh label create "自動作成" \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "1D76DB" \
+            --description "GitHub Actions によって自動作成された Pull Request"
 
       - name: Detect unmerged release branches and create pull requests
         shell: bash
@@ -99,25 +121,16 @@ jobs:
 
             body_file=$(mktemp)
             cat > "$body_file" <<EOF
-          ## 概要
+          ## 説明
 
-          リリースブランチの変更内容を \`main\` へ反映するための自動作成 Pull Request です。
+          Workflow により、リリースブランチ名の日付を過ぎており、かつ \`main\` ブランチへマージされていない状態を検知したため、この Pull Request は自動作成されました。
 
-          対象リリースブランチ:
+          内容をご確認のうえ、本 Pull Request をマージしてください。
 
-          \`${release_branch}\`
+          \`main\` へのマージ後、現在進行中の各 \`project\` ブランチにも取り込んでください。
 
-          この Pull Request は GitHub Actions によって自動作成されました。
-
-          ## 背景
-
-          リリース後の \`main\` へのマージ漏れを防止するため、
-          日付が経過した未マージのリリースブランチを検出して自動的に作成しています。
-
-          ## 確認事項
-
-          - [ ] release ブランチの変更内容に問題がないこと
-          - [ ] main へマージして問題ないこと
+          - リリースブランチ: \`${release_branch}\`
+          - マージ先ブランチ: \`main\`
           EOF
 
             # 作成直前にも確認し、再実行や並行操作による重複を防止する。
@@ -144,7 +157,8 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --base main \
               --head "$release_branch" \
-              --title "[Auto] Merge ${release_branch} back to main" \
+              --title "[自動生成] ${release_branch} -> main" \
+              --label "自動作成" \
               --body-file "$body_file"; then
               echo "  status: PR created"
             else
