@@ -121,8 +121,6 @@ jobs:
 
             body_file=$(mktemp)
             cat > "$body_file" <<EOF
-          ## 説明
-
           Workflow により、リリースブランチ名の日付を過ぎており、かつ \`main\` ブランチへマージされていない状態を検知したため、この Pull Request は自動作成されました。
 
           内容をご確認のうえ、本 Pull Request をマージしてください。
