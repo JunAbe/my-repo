@@ -38,19 +38,19 @@ jobs:
 
           label_exists=$(gh label list \
             --repo "$GITHUB_REPOSITORY" \
-            --search "自動作成" \
+            --search "自動生成" \
             --json name \
-            --jq 'any(.name == "自動作成")')
+            --jq 'any(.name == "自動生成")')
 
           if [[ "$label_exists" == "true" ]]; then
-            echo "Label already exists: 自動作成"
+            echo "Label already exists: 自動生成"
             exit 0
           fi
 
-          gh label create "自動作成" \
+          gh label create "自動生成" \
             --repo "$GITHUB_REPOSITORY" \
             --color "1D76DB" \
-            --description "GitHub Actions によって自動作成された Pull Request"
+            --description "GitHub Actions によって自動生成された Pull Request"
 
       - name: Detect unmerged release branches and create pull requests
         shell: bash
@@ -121,7 +121,7 @@ jobs:
 
             body_file=$(mktemp)
             cat > "$body_file" <<EOF
-          Workflow により、リリースブランチ名の日付を過ぎており、かつ \`main\` ブランチへマージされていない状態を検知したため、この Pull Request は自動作成されました。
+          Workflow により、リリースブランチ名の日付を過ぎており、かつ \`main\` ブランチへマージされていない状態を検知したため、この Pull Request は自動生成されました。
 
           内容をご確認のうえ、本 Pull Request をマージしてください。
 
@@ -156,7 +156,7 @@ jobs:
               --base main \
               --head "$release_branch" \
               --title "[自動生成] ${release_branch} -> main" \
-              --label "自動作成" \
+              --label "自動生成" \
               --body-file "$body_file"; then
               echo "  status: PR created"
             else
